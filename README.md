@@ -10,7 +10,7 @@ A unified real-time computer vision system for FIRST LEGO League (FLL) tables. C
 
 1. **Install CUDA-accelerated PyTorch for your NVIDIA GPU**:
    ```powershell
-   py -3.12 -m pip install torch==2.4.0+cu124 torchvision==0.19.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+   py -3.12 -m pip install torch==2.5.1+cu124 torchvision==0.20.1+cu124 --index-url https://download.pytorch.org/whl/cu124
    ```
 
 2. **Install all remaining project dependencies**:
