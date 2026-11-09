@@ -21,6 +21,14 @@ env/
 runs/
 *.pt
 
+# Video and raw dataset dumps (avoid uploading multi-GB files to git)
+*.mp4
+*.avi
+*.mov
+*.mkv
+dataset/raw/*
+!dataset/raw/.gitkeep
+
 # Node dependencies & logs
 node_modules/
 npm-debug.log*
