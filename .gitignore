@@ -20,6 +20,11 @@ env/
 # Ultralytics runs & Model weights
 runs/
 *.pt
+!models/best.pt
+!best.pt
+
+# Dataset label cache
+*.cache
 
 # Video and raw dataset dumps (avoid uploading multi-GB files to git)
 *.mp4
