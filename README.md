@@ -10,12 +10,13 @@ Supports **Windows**, **Linux**, and **macOS** with automatic hardware accelerat
 
 The system works across all platforms and automatically selects the fastest available hardware. Choose your OS and hardware setup below:
 
-### 1.1 Step 1: Install PyTorch for Your Hardware
+### 1.1 Install PyTorch for Your Hardware
 
-#### Case A: NVIDIA GPU (CUDA 12.4 Acceleration) — *Windows & Linux*
+#### NVIDIA GPU (CUDA 12.4 Acceleration) — *Windows & Linux*
 Recommended for fastest training (RTX 30/40 series, GTX, etc.):
 
 - **Windows**:
+  
   ```powershell
   py -3.12 -m pip install torch==2.5.1+cu124 torchvision==0.20.1+cu124 --index-url https://download.pytorch.org/whl/cu124
   ```
@@ -26,7 +27,7 @@ Recommended for fastest training (RTX 30/40 series, GTX, etc.):
 
 ---
 
-#### Case B: Standard CPU (No Dedicated NVIDIA GPU) — *Windows, Linux & Mac*
+#### Standard CPU (No Dedicated NVIDIA GPU) — *Windows, Linux & Mac*
 If you don't have an NVIDIA GPU, standard CPU-optimized wheels run tracking and training without any CUDA drivers:
 
 - **Windows**:
@@ -40,7 +41,7 @@ If you don't have an NVIDIA GPU, standard CPU-optimized wheels run tracking and 
 
 ---
 
-#### Case C: Apple Silicon Mac (M1 / M2 / M3 / M4) — *macOS Metal (MPS)*
+#### Apple Silicon Mac (M1 / M2 / M3 / M4) — *macOS Metal (MPS)*
 The codebase runs natively on macOS without any code modifications. PyTorch for macOS ARM64 automatically leverages Apple's GPU via Metal Performance Shaders (MPS):
 
 - **macOS**:
@@ -50,7 +51,7 @@ The codebase runs natively on macOS without any code modifications. PyTorch for 
 
 ---
 
-#### Case D: AMD GPU (ROCm) — *Linux*
+#### AMD GPU (ROCm) — *Linux*
 If you are running an AMD Radeon GPU under Linux with ROCm:
 
 - **Linux**:
@@ -60,7 +61,7 @@ If you are running an AMD Radeon GPU under Linux with ROCm:
 
 ---
 
-### 1.2 Step 2: Install Project Requirements
+### 1.2 Install Project Requirements
 
 Install the remaining dependencies (OpenCV, FastAPI, Ultralytics YOLOv8, etc.):
 
@@ -75,7 +76,7 @@ Install the remaining dependencies (OpenCV, FastAPI, Ultralytics YOLOv8, etc.):
 
 ---
 
-### 1.3 Step 3: Verify Hardware Acceleration
+### 1.3 Verify Hardware Acceleration
 
 Check that PyTorch detects your platform's accelerator:
 
@@ -123,18 +124,21 @@ If you clone this repository, you **do not need to train a model**. `python run.
 
 ---
 
-## 4. Custom YOLOv8 Robot Training Workflow (Optional)
+## 4. Custom YOLOv8 Training Workflow (LEGO Robots & Extensible to Any Object)
 
-If you want to train a custom model tailored to your specific robot geometry and lighting:
+> [!TIP]
+> **Primary Purpose**: The core and default design of this project is dedicated to tracking **FIRST LEGO League (FLL) LEGO robots** (Spike Prime, Mindstorms, Robot Inventor, EV3) on competition mats while actively rejecting human hands, referee boards, and shadows. Pre-trained weights for LEGO robots are already included in [`best.pt`](./best.pt).
+>
+> **Extensible to Other Objects**: The underlying computer vision architecture is completely modular. You can use this exact same 5-step workflow to train the system to track **any custom object, vehicle, or robot** (e.g., custom mobile robots, RC cars, drones, laboratory carts, balls, or industrial parts). The smooth fluid-head pan/zoom camera engine, motion-activity gating, and telemetry HUD are object-agnostic and will seamlessly lock onto whatever target class you train.
 
 ```
 ┌─────────────────────────────────┐
-│ 1. Extract Frames from Video    │ python run.py extract --video match.mp4
+│ 1. Extract Frames from Video    │ python run.py extract --video recording.mp4
 └────────────────┬────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────┐
-│ 2. Annotate in Roboflow / CVAT │ Label class 0 ("robot") only
+│ 2. Annotate in Roboflow / CVAT │ Label target class (default: "robot")
 └────────────────┬────────────────┘
                  │
                  ▼
@@ -155,9 +159,9 @@ If you want to train a custom model tailored to your specific robot geometry and
 
 ---
 
-### Step 1: Extract Frames from Match Recording
+### Step 1: Extract Frames from Video
 
-Extract representative frames from any `.mp4` video (e.g. `TestVideo_2.mp4`):
+Extract representative frames from any `.mp4` video (e.g. `TestVideo_2.mp4` or your own target recording):
 
 - **Windows**:
   ```powershell
@@ -175,9 +179,13 @@ Sampled frames are written to `dataset/raw/`. Adjust `--interval` as needed (e.g
 ### Step 2: Annotate Images (Roboflow / CVAT)
 
 1. Upload the frames from `dataset/raw/` to [Roboflow](https://roboflow.com/) or CVAT.
-2. Draw bounding boxes around the **`robot`** class only:
-   - **Do annotate**: LEGO Spike Prime / Mindstorms robot, including all active attachments.
-   - **Do NOT annotate**: Human hands, arms, mission models, or referee clipboards. Leaving them unannotated teaches the neural network to treat them as background.
+2. Draw bounding boxes around your target object (class index `0`):
+   - **For FLL LEGO Robots (Default)**:
+     - **Do annotate**: LEGO Spike Prime / Mindstorms robot, including all active attachments.
+     - **Do NOT annotate**: Human hands, arms, mission models, or referee clipboards. Leaving them unannotated teaches the neural network to treat them as background.
+   - **For Any Other Custom Object (e.g., Drone, RC Car, Ball)**:
+     - **Do annotate**: Your specific target object in different positions, lighting conditions, and orientations.
+     - **Do NOT annotate**: Background clutter, human hands, obstacles, or reflections you want the tracker to ignore.
 3. In Roboflow, click **Generate Version** and export in **YOLOv8** format.
 
 ---
@@ -208,7 +216,7 @@ dataset/
 > [!NOTE]
 > Each `.txt` label file contains lines formatted as:
 > `0 <x_center> <y_center> <width> <height>` (normalized between `0.0` and `1.0`).
-> For this single-class robot tracker, the class index is always `0`.
+> For single-target tracking, the class index is always `0`. (If you use a custom name like `drone` or `car`, you can update the label name in [`data.yaml`](./data.yaml)).
 
 ---
 
@@ -248,6 +256,8 @@ Test tracking with a webcam or video file:
   ```bash
   python3 run.py track
   ```
+
+*(To test on a recorded video file instead of a live webcam, pass `--source your_video.mp4`)*
 
 #### Live Tracking Hotkeys:
 | Key | Action |
