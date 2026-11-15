@@ -22,8 +22,8 @@ def _try_open_camera(index: int):
 		if cap.isOpened():
 			cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 			cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-			cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-			cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+			cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+			cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 			cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 			try:
 				cap.set(cv2.CAP_PROP_AUTO_WB, 1)
@@ -39,8 +39,8 @@ def _try_open_camera(index: int):
 	cap = cv2.VideoCapture(index)
 	if cap.isOpened():
 		cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-		cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-		cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+		cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+		cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 		cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 		ret, frame = cap.read()
 		if ret and frame is not None:

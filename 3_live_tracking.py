@@ -293,25 +293,71 @@ def is_human_hand_or_arm(frame: np.ndarray, bbox: Tuple[int, int, int, int]) -> 
 
 	ycrcb = cv2.cvtColor(crop, cv2.COLOR_BGR2YCrCb)
 	hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-	skin_ycrcb = cv2.inRange(ycrcb, (40, 135, 80), (255, 172, 125))
-	skin_hsv = cv2.inRange(hsv, (0, 35, 60), (20, 175, 255))
+	skin_ycrcb = cv2.inRange(ycrcb, (40, 133, 77), (255, 177, 127))
+	skin_hsv = cv2.inRange(hsv, (0, 25, 50), (22, 180, 255))
 	skin_mask = cv2.bitwise_and(skin_ycrcb, skin_hsv)
 	skin_ratio = cv2.countNonZero(skin_mask) / area
 
-	# LEGO SPIKE / Mindstorms robots have bright white/grey hub surfaces or cyan/colored bricks
-	white_grey_px = cv2.countNonZero(cv2.inRange(hsv, (0, 0, 165), (180, 40, 255)))
-	cyan_px = cv2.countNonZero(cv2.inRange(hsv, (82, 60, 55), (106, 255, 255)))
-	lego_ratio = (white_grey_px + cyan_px) / area
-
-	touches_border = (
-		x1 <= int(fw * 0.03)
-		or y1 <= int(fh * 0.03)
-		or x2 >= int(fw * 0.97)
-		or y2 >= int(fh * 0.97)
+	true_skin_mask = cv2.bitwise_and(
+		cv2.inRange(ycrcb, (40, 138, 77), (255, 177, 127)),
+		cv2.inRange(hsv, (0, 30, 50), (17, 180, 255)),
 	)
-	if touches_border and skin_ratio > 0.22 and lego_ratio < 0.20:
+	true_skin_ratio = cv2.countNonZero(true_skin_mask) / area
+
+	px1, py1 = max(0, x1 - 25), max(0, y1 - 25)
+	px2, py2 = min(fw, x2 + 25), min(fh, y2 + 25)
+	pad_crop = frame[py1:py2, px1:px2]
+	pad_ycrcb = cv2.cvtColor(pad_crop, cv2.COLOR_BGR2YCrCb)
+	pad_hsv = cv2.cvtColor(pad_crop, cv2.COLOR_BGR2HSV)
+	pad_skin = cv2.bitwise_and(
+		cv2.inRange(pad_ycrcb, (40, 133, 77), (255, 177, 127)),
+		cv2.inRange(pad_hsv, (0, 25, 50), (22, 180, 255)),
+	)
+	pad_skin_ratio = cv2.countNonZero(pad_skin) / area
+
+	# LEGO SPIKE / Mindstorms robots have bright white/grey hub surfaces or cyan/colored bricks
+	white_grey_px = cv2.countNonZero(cv2.inRange(hsv, (0, 0, 135), (180, 50, 255)))
+	cyan_px = cv2.countNonZero(cv2.inRange(hsv, (85, 110, 55), (108, 255, 255)))
+	cyan_med_px = cv2.countNonZero(cv2.inRange(hsv, (85, 65, 55), (108, 255, 255)))
+	white_ratio = white_grey_px / area
+	cyan_ratio = cyan_px / area
+	cyan_med_ratio = cyan_med_px / area
+
+	if fw >= int(fh * 1.15):
+		cx = (x1 + x2) * 0.5
+		cy = (y1 + y2) * 0.5
+		in_left = (fw * 0.258 <= cx <= fw * 0.505) and (fh * 0.15 <= cy <= fh * 0.945)
+		in_right = (fw * 0.532 <= cx <= fw * 0.795) and (fh * 0.15 <= cy <= fh * 0.955)
+		if not (in_left or in_right):
+			return True
+		near_border = (
+			x1 < int(fw * 0.285)
+			or x2 > int(fw * 0.77)
+			or y1 < int(fh * 0.19)
+			or y2 > int(fh * 0.89)
+		)
+		on_left_border = x1 < int(fw * 0.27)
+	else:
+		near_border = (
+			x1 < int(fw * 0.08)
+			or x2 > int(fw * 0.92)
+			or y1 < int(fh * 0.06)
+			or y2 > int(fh * 0.92)
+		)
+		on_left_border = x1 < int(fw * 0.06)
+
+	has_spike_robot_sig = (
+		(cyan_ratio >= 0.02 or cyan_med_ratio >= 0.025)
+		and white_ratio >= 0.25
+		and (true_skin_ratio <= 0.26 or not near_border)
+	)
+	if skin_ratio > 0.22 and not has_spike_robot_sig:
 		return True
-	if skin_ratio > 0.36 and lego_ratio < 0.18:
+	if pad_skin_ratio > 0.06 and cyan_ratio < 0.025:
+		return True
+	if near_border and cyan_ratio < 0.025 and (pad_skin_ratio > 0.05 or on_left_border):
+		return True
+	if not near_border and skin_ratio > 0.08 and cyan_ratio < 0.02 and white_ratio < 0.15:
 		return True
 	return False
 
@@ -335,7 +381,7 @@ def has_lego_robot_appearance(frame: np.ndarray, bbox: Tuple[int, int, int, int]
 		return False
 
 	hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-	white_px = cv2.countNonZero(cv2.inRange(hsv, (0, 0, 185), (180, 45, 255)))
+	white_px = cv2.countNonZero(cv2.inRange(hsv, (0, 0, 135), (180, 50, 255)))
 	cyan_px = cv2.countNonZero(cv2.inRange(hsv, (82, 60, 55), (106, 255, 255)))
 	white_ratio = white_px / area
 	cyan_ratio = cyan_px / area
@@ -572,46 +618,81 @@ def _detect_stationary_on_single_table(
 
 	# LEGO SPIKE Prime Medium Azure / Cyan wheel & motor signature
 	teal_mask = (
-		(H >= 64) & (H <= 108) & (S >= 42) & (V >= 60) & (V <= 215) & (B > R + 10) & (G > R + 8)
+		(H >= 85) & (H <= 108) & (S >= 65) & (V >= 60) & (V <= 215) & (B > R + 10) & (G > R + 8)
 	).astype(np.uint8) * 255
 	teal_mask = cv2.morphologyEx(teal_mask, cv2.MORPH_OPEN, kernel_small)
+	teal_strong = (
+		(H >= 85) & (H <= 108) & (S >= 115) & (V >= 60) & (V <= 215) & (B > R + 18) & (G > R + 15)
+	).astype(np.uint8) * 255
+	teal_strong = cv2.morphologyEx(teal_strong, cv2.MORPH_OPEN, kernel_small)
 
 	# 1. Robot on the mat: solid bright rectangular hub top + adjacent cyan wheel/accents
-	hub_mask = ((V >= 208) & (S <= 54) & (R >= 202) & (B >= 188)).astype(np.uint8) * 255
-	hub_mask = cv2.morphologyEx(hub_mask, cv2.MORPH_OPEN, kernel_hub)
-
-	contours, _ = cv2.findContours(hub_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	mean_v = float(V.mean())
+	v_th_list = (228,) if mean_v > 192.0 else (228, 208)
 	best_box = None
 	best_score = 0.0
-	for c in contours:
-		area = cv2.contourArea(c)
-		if area < 95 or area > 1600:
-			continue
-		x, y, w, h = cv2.boundingRect(c)
-		if w < 10 or h < 10 or w > 95 or h > 95:
-			continue
-		hull_area = max(1.0, cv2.contourArea(cv2.convexHull(c)))
-		solidity = area / hull_area
-		aspect = max(w, h) / max(1.0, min(w, h))
-		if solidity < 0.70 or aspect > 2.4:
-			continue
-		# Reject printed black-and-white line-following ovals (which have a dark stripe down their center)
-		cx0, cy0 = x + w // 4, y + h // 4
-		cx1, cy1 = max(cx0 + 2, x + (3 * w) // 4), max(cy0 + 2, y + (3 * h) // 4)
-		center_v = V[cy0:cy1, cx0:cx1]
-		if float(np.percentile(center_v, 15)) < 185.0 or float(center_v.mean()) < 210.0:
-			continue
-		x0, y0 = max(0, x - 18), max(0, y - 18)
-		x1, y1 = min(W, x + w + 18), min(H_grid, y + h + 18)
-		teal_near = int(np.count_nonzero(teal_mask[y0:y1, x0:x1]))
-		if teal_near < 28:
-			continue
-		rx0, ry0 = max(0, x - 12), max(0, y - 10)
-		rx1, ry1 = min(W, x + w + 16), min(H_grid, y + h + 20)
-		score = float(teal_near) * solidity
-		if score > best_score:
-			best_score = score
-			best_box = (rx0, ry0, rx1 - rx0, ry1 - ry0, min(0.95, 0.75 + teal_near / 400.0))
+	for v_th in v_th_list:
+		hub_mask = ((V >= v_th) & (S <= 54) & (R >= v_th - 6) & (B >= v_th - 20)).astype(np.uint8) * 255
+		hub_mask = cv2.morphologyEx(hub_mask, cv2.MORPH_OPEN, kernel_hub)
+
+		contours, _ = cv2.findContours(hub_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+		for c in contours:
+			area = cv2.contourArea(c)
+			if area < 95 or area > 1600:
+				continue
+			x, y, w, h = cv2.boundingRect(c)
+			if w < 10 or h < 10 or w > 95 or h > 95:
+				continue
+			if x <= 18 or (x + w) >= (W - 18):
+				continue
+			if v_th == 228 and mean_v <= 192.0 and x < 120 and y < 140:
+				continue
+			hull_area = max(1.0, cv2.contourArea(cv2.convexHull(c)))
+			solidity = area / hull_area
+			aspect = max(w, h) / max(1.0, min(w, h))
+			if solidity < 0.70 or aspect > 2.4:
+				continue
+			# Reject printed black-and-white line-following ovals (which have a dark stripe down their center)
+			cx0, cy0 = x + w // 4, y + h // 4
+			cx1, cy1 = max(cx0 + 2, x + (3 * w) // 4), max(cy0 + 2, y + (3 * h) // 4)
+			center_v = V[cy0:cy1, cx0:cx1]
+			if float(np.percentile(center_v, 15)) < max(175.0, float(v_th - 23)) or float(center_v.mean()) < float(
+				v_th + (2 if v_th == 228 else 1)
+			):
+				continue
+			x0, y0 = max(0, x - 18), max(0, y - 18)
+			x1, y1 = min(W, x + w + 18), min(H_grid, y + h + 18)
+			teal_near = int(np.count_nonzero(teal_mask[y0:y1, x0:x1]))
+			teal_strong_near = int(np.count_nonzero(teal_strong[y0:y1, x0:x1]))
+			has_strong_teal = teal_near >= 28 and teal_strong_near >= (145 if v_th == 228 else 130)
+			has_large_hub_teal = (
+				v_th == 228
+				and 360 <= area <= 620
+				and 22 <= w <= 36
+				and 22 <= h <= 36
+				and solidity >= 0.84
+				and aspect <= 1.25
+				and x > 25
+				and (x + w) < (W - 25)
+				and y > 155
+				and teal_near >= 90
+				and teal_strong_near >= 28
+			)
+			if not (has_strong_teal or has_large_hub_teal):
+				continue
+			rx0, ry0 = max(0, x - 12), max(0, y - 10)
+			rx1, ry1 = min(W, x + w + 16), min(H_grid, y + h + 20)
+			if rx1 - rx0 < 42:
+				if rx1 >= W - 4:
+					rx0 = max(0, rx1 - 42)
+				else:
+					rx1 = min(W, rx0 + 42)
+			score = float(max(teal_strong_near, teal_near // 2)) * solidity
+			if score > best_score:
+				best_score = score
+				best_box = (rx0, ry0, rx1 - rx0, ry1 - ry0, min(0.95, 0.75 + teal_strong_near / 400.0))
+		if best_box is not None:
+			break
 
 	if best_box is not None:
 		bx, by, bw, bh, conf = best_box
@@ -621,24 +702,51 @@ def _detect_stationary_on_single_table(
 		fh_box = int(round(bh * sh / float(H_grid)))
 		return (fx, fy, fx + fw_box, fy + fh_box, round(conf, 2))
 
-	# 2. Robot inside any of the 4 white quarter-circle corner launch areas
-	corners = (
-		(0, 135, 0, 150, 0, 0),
-		(0, 135, H_grid - 150, H_grid, 0, H_grid),
-		(W - 135, W, 0, 150, W, 0),
-		(W - 135, W, H_grid - 150, H_grid, W, H_grid),
+	# 2. Robot inside the white quarter-circle corner launch areas (located on the outer side of the table)
+	wf_left = (
+		np.count_nonzero((V[0:150, 0:135] > 195) & (S[0:150, 0:135] < 42))
+		+ np.count_nonzero((V[H_grid - 150 : H_grid, 0:135] > 195) & (S[H_grid - 150 : H_grid, 0:135] < 42))
 	)
+	wf_right = (
+		np.count_nonzero((V[0:150, W - 135 : W] > 195) & (S[0:150, W - 135 : W] < 42))
+		+ np.count_nonzero((V[H_grid - 150 : H_grid, W - 135 : W] > 195) & (S[H_grid - 150 : H_grid, W - 135 : W] < 42))
+	)
+	w_mat = (V > 185) & (S < 45)
+	outer_w = w_mat[:, :120] if wf_left >= wf_right else w_mat[:, W - 120 :]
+	w_rows = np.where(outer_w.sum(axis=1) > 15)[0]
+	y_bot = int(w_rows[-1]) + 1 if len(w_rows) > 0 and w_rows[-1] > H_grid - 80 else H_grid
+	if wf_left >= wf_right:
+		corners = (
+			(0, 135, 0, 150, 0, 0),
+			(0, 135, max(0, y_bot - 150), y_bot, 0, y_bot),
+		)
+	else:
+		corners = (
+			(W - 135, W, 0, 150, W, 0),
+			(W - 135, W, max(0, y_bot - 150), y_bot, W, y_bot),
+		)
+	best_corner = None
+	best_corner_cnt = 0
 	for x0, x1, y0, y1, cx_c, cy_c in corners:
 		ch, cs, cv_ = H[y0:y1, x0:x1], S[y0:y1, x0:x1], V[y0:y1, x0:x1]
-		white_frac = np.count_nonzero((cv_ > 185) & (cs < 48)) / float(ch.size)
-		if white_frac < 0.28:
+		white_frac = (
+			np.count_nonzero((cv_ > 195) & (cs < 42)) / float(max(1, ch.size))
+			if y0 == 0
+			else np.count_nonzero((cv_ > 185) & (cs < 45)) / float(max(1, ch.size))
+		)
+		if white_frac < (0.28 if y0 == 0 else 0.25):
 			continue
 		yy, xx = np.mgrid[y0:y1, x0:x1]
 		dist = np.hypot(xx - cx_c, yy - cy_c)
-		in_arc = ((dist > 14) & (dist < 118)).astype(np.uint8) * 255
-		teal_in_arc = cv2.bitwise_and(teal_mask[y0:y1, x0:x1], in_arc)
+		max_arc_r = 118 if (x0 == 0 and y0 < 200) else 136
+		in_arc = ((dist > 14) & (dist < max_arc_r)).astype(np.uint8) * 255
+		teal_in_arc = cv2.bitwise_and(teal_strong[y0:y1, x0:x1], in_arc)
 		teal_cnt = int(np.count_nonzero(teal_in_arc))
-		if teal_cnt >= 35:
+		if x0 == 0:
+			min_corner_teal = 220 if y0 < 200 else 105
+		else:
+			min_corner_teal = 135 if y0 < 200 else 75
+		if teal_cnt >= min_corner_teal and teal_cnt > best_corner_cnt:
 			clustered = cv2.morphologyEx(teal_in_arc, cv2.MORPH_CLOSE, kernel_cluster)
 			t_cnts, _ = cv2.findContours(clustered, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 			if not t_cnts:
@@ -657,9 +765,10 @@ def _detect_stationary_on_single_table(
 			fw_box = int(round(bw * sw / float(W)))
 			fh_box = int(round(bh * sh / float(H_grid)))
 			conf = min(0.95, 0.78 + teal_cnt / 400.0)
-			return (fx, fy, fx + fw_box, fy + fh_box, round(conf, 2))
+			best_corner_cnt = teal_cnt
+			best_corner = (fx, fy, fx + fw_box, fy + fh_box, round(conf, 2))
 
-	return None
+	return best_corner
 
 
 def detect_stationary_lego_robot(
@@ -680,13 +789,9 @@ def detect_stationary_lego_robot(
 
 	regions = []
 	if fw >= int(fh * 1.15):
-		# Wide dual-table camera frame or split-view screenshot: inspect calibrated table ROIs
-		for rx1, ry1, rx2, ry2 in _detect_dual_table_rois(frame):
-			if (rx2 - rx1) >= 32 and (ry2 - ry1) >= 32:
-				regions.append((rx1, ry1, rx2, ry2))
-		# Also include left/right halves as fallback if calibrated ROIs differ from split view
-		regions.append((0, 0, fw // 2, fh))
-		regions.append((fw // 2, 0, fw, fh))
+		# Wide dual-table camera frame: clamp regions to playable Left and Right table bounds
+		regions.append((int(fw * 0.258), int(fh * 0.15), int(fw * 0.505), int(fh * 0.945)))
+		regions.append((int(fw * 0.532), int(fh * 0.15), int(fw * 0.778), int(fh * 0.955)))
 	else:
 		regions.append((0, 0, fw, fh))
 
@@ -713,9 +818,6 @@ def detect_stationary_lego_robot(
 		if score > best_score:
 			best_score = score
 			best_candidate = (x1, y1, x2, y2, cx, cy, conf)
-		# If calibrated table regions already matched, no need to re-test raw halves
-		if len(regions) > 2 and best_candidate is not None:
-			break
 
 	return best_candidate
 
@@ -761,8 +863,60 @@ def detect_motion_fallback(
 		x2 = min(frame_w, int(round((bx + bw) * sx)))
 		y2 = min(frame_h, int(round((by + bh) * sy)))
 
-		if frame is not None and is_human_hand_or_arm(frame, (x1, y1, x2, y2)):
+		box_w = x2 - x1
+		box_h = y2 - y1
+		if box_w < 24 or box_h < 24:
 			continue
+		if frame_w >= int(frame_h * 1.15):
+			if box_w > int(frame_w * 0.13) or box_h > int(frame_h * 0.22):
+				continue
+			cx_cand = (x1 + x2) * 0.5
+			cy_cand = (y1 + y2) * 0.5
+			in_left = (frame_w * 0.26 <= cx_cand <= frame_w * 0.505) and (frame_h * 0.15 <= cy_cand <= frame_h * 0.94)
+			in_right = (frame_w * 0.53 <= cx_cand <= frame_w * 0.778) and (frame_h * 0.15 <= cy_cand <= frame_h * 0.94)
+			if not (in_left or in_right):
+				continue
+			if x1 < int(frame_w * 0.26) or x2 > int(frame_w * 0.78):
+				continue
+
+		if frame is not None:
+			if is_human_hand_or_arm(frame, (x1, y1, x2, y2)):
+				continue
+			if not has_lego_robot_appearance(frame, (x1, y1, x2, y2)):
+				continue
+			crop = frame[y1:y2, x1:x2]
+			hsv_c = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+			b_area = float(max(1, box_w * box_h))
+			cyan_s = cv2.countNonZero(cv2.inRange(hsv_c, (85, 115, 60), (108, 255, 255))) / b_area
+			wg_s = cv2.countNonZero(cv2.inRange(hsv_c, (0, 0, 145), (180, 45, 255))) / b_area
+			dk_s = cv2.countNonZero(cv2.inRange(hsv_c, (0, 0, 0), (180, 255, 75))) / b_area
+			px1, py1 = max(0, x1 - 28), max(0, y1 - 28)
+			px2, py2 = min(frame_w, x2 + 28), min(frame_h, y2 + 28)
+			pad_crop = frame[py1:py2, px1:px2]
+			pad_ycrcb = cv2.cvtColor(pad_crop, cv2.COLOR_BGR2YCrCb)
+			pad_hsv = cv2.cvtColor(pad_crop, cv2.COLOR_BGR2HSV)
+			pad_skin = cv2.bitwise_and(
+				cv2.inRange(pad_ycrcb, (40, 133, 77), (255, 177, 127)),
+				cv2.inRange(pad_hsv, (0, 25, 50), (22, 180, 255)),
+			)
+			true_pad_skin = cv2.bitwise_and(
+				cv2.inRange(pad_ycrcb, (40, 138, 77), (255, 177, 127)),
+				cv2.inRange(pad_hsv, (0, 30, 50), (17, 180, 255)),
+			)
+			near_outer = (
+				frame_w >= int(frame_h * 1.15)
+				and (x1 < int(frame_w * 0.285) or x2 > int(frame_w * 0.75) or y1 < int(frame_h * 0.20) or y2 > int(frame_h * 0.89))
+			)
+			if cv2.countNonZero(true_pad_skin) > b_area * 0.04 and cyan_s < 0.04:
+				continue
+			if near_outer and cv2.countNonZero(pad_skin) > b_area * 0.04 and cyan_s < 0.04:
+				continue
+			if dk_s > 0.45 and cyan_s < 0.03:
+				continue
+			if near_outer and cyan_s < 0.035:
+				continue
+			if not near_outer and cyan_s < 0.03 and (wg_s < 0.22 or dk_s < 0.04):
+				continue
 
 		cx = int(round((x1 + x2) * 0.5))
 		cy = int(round((y1 + y2) * 0.5))
@@ -808,6 +962,18 @@ def run_live_tracking(
 
 	print(f"[INFO] Opening camera source: {source}...")
 	cap = open_camera_robust(source)
+	if cap is None and (source == 0 or str(source) == "0"):
+		videos_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "videos")
+		if os.path.isdir(videos_dir):
+			mp4_files = sorted(
+				os.path.join(videos_dir, f)
+				for f in os.listdir(videos_dir)
+				if f.lower().endswith(".mp4")
+			)
+			if mp4_files:
+				source = mp4_files[0]
+				print(f"[INFO] Webcam 0 unavailable; falling back to video file: {source}")
+				cap = open_camera_robust(source)
 	if cap is None:
 		raise RuntimeError(f"Could not open video source '{source}'. Check that the webcam is connected.")
 

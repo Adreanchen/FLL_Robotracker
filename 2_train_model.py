@@ -101,10 +101,14 @@ def train_robot_detector(
 		single_cls=True,        # Enforce single-class ("robot") detection
 		amp=resolved_device.startswith("cuda"),  # Mixed-precision training for faster GPU throughput
 		mosaic=1.0,             # Helps generalize across colorful FLL mat backgrounds
+		close_mosaic=10,        # Refines tight bounding boxes on un-mosaicked images in final 10 epochs
 		hsv_h=0.015,
 		hsv_s=0.5,
 		hsv_v=0.4,
+		scale=0.5,
+		translate=0.1,
 		fliplr=0.5,
+		flipud=0.2,
 		workers=4 if not resolved_device.startswith("cpu") else 0,
 		verbose=True,
 	)
